@@ -3,12 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
-  rpoTrajectoryData, 
-  discomBenchmarks, 
-  REC_FLOOR_PRICE_INR, 
-  RPOTrajectoryYear 
-} from '@/data/rpo';
-import { 
   LineChart, 
   Line, 
   XAxis, 
@@ -38,15 +32,69 @@ import {
   ShieldCheck
 } from 'lucide-react';
 
+export interface RPOTrajectoryYear {
+  id?: string;
+  year: string;
+  financialYear: string;
+  totalRPOTarget: number;
+  windRPO: number;
+  hydroRPO: number;
+  otherRPO: number;
+  storageObligationMWh?: number | null;
+}
+
+export interface DiscomBenchmark {
+  id?: string;
+  discom: string;
+  state: string;
+  achievedPercent: number;
+  target2025: number;
+  shortfall: number;
+  status: string;
+  annualDemandMU: number;
+}
+
 export default function RPOTrackerPage() {
   const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const [rpoTrajectoryData, setRpoTrajectoryData] = useState<RPOTrajectoryYear[]>([]);
+  const [discomBenchmarks, setDiscomBenchmarks] = useState<DiscomBenchmark[]>([]);
+  const [recFloorPrice, setRecFloorPrice] = useState<number>(1000);
+
   const [achievementPercent, setAchievementPercent] = useState<number>(24.5);
   const [targetYear, setTargetYear] = useState<string>('2025');
   const [annualDemandMU, setAnnualDemandMU] = useState<number>(25000); // 25,000 Million Units (MU)
 
   useEffect(() => {
     setMounted(true);
+    async function fetchRPOData() {
+      try {
+        const res = await fetch('/api/rpo');
+        const json = await res.json();
+        if (json.data) {
+          setRpoTrajectoryData(json.data.trajectory || []);
+          setDiscomBenchmarks(json.data.discomBenchmarks || []);
+          if (json.data.recFloorPrice) {
+            setRecFloorPrice(json.data.recFloorPrice);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load RPO data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchRPOData();
   }, []);
+
+  if (loading || rpoTrajectoryData.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 flex items-center justify-center">
+        <div className="text-slate-500 font-medium">Loading...</div>
+      </div>
+    );
+  }
 
   // Find target for the selected year
   const selectedYearData = rpoTrajectoryData.find(d => d.year === targetYear) || rpoTrajectoryData[0];
@@ -66,7 +114,7 @@ export default function RPOTrackerPage() {
   
   // Estimated REC (Renewable Energy Certificate) Purchase Cost to bridge the gap
   // 1 REC = 1 MWh
-  const estimatedRECCostINR = shortfallMWh * REC_FLOOR_PRICE_INR;
+  const estimatedRECCostINR = shortfallMWh * recFloorPrice;
   const estimatedRECCostCrores = (estimatedRECCostINR / 10000000).toFixed(2);
 
   // Status badge config
@@ -97,6 +145,21 @@ export default function RPOTrackerPage() {
 
   const status = getStatusDetails();
   const StatusIcon = status.icon;
+
+  const getBenchmarkStatusDisplay = (val: string) => {
+    const upper = (val || '').toUpperCase();
+    if (upper === 'COMPLIANT') return 'Compliant';
+    if (upper === 'MODERATE_RISK') return 'Moderate Risk';
+    if (upper === 'CRITICAL_SHORTFALL') return 'Critical Shortfall';
+    return val;
+  };
+
+  const getBenchmarkStatusBadgeClass = (val: string) => {
+    const upper = (val || '').toUpperCase();
+    if (upper === 'COMPLIANT') return 'bg-emerald-100 text-emerald-800';
+    if (upper === 'MODERATE_RISK') return 'bg-amber-100 text-amber-800';
+    return 'bg-rose-100 text-rose-800';
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
@@ -327,7 +390,7 @@ export default function RPOTrackerPage() {
                   {isCompliant ? '₹0.00' : `₹${estimatedRECCostCrores} Cr`}
                 </div>
                 <div className="text-xs text-slate-500 mt-1">
-                  {isCompliant ? 'No penalty exposure' : `At ₹1,000/MWh REC floor`}
+                  {isCompliant ? 'No penalty exposure' : `At ₹${recFloorPrice.toLocaleString()}/MWh REC floor`}
                 </div>
               </div>
             </div>
@@ -484,14 +547,8 @@ export default function RPOTrackerPage() {
                     )}
                   </td>
                   <td className="px-4 py-3.5">
-                    <span className={`px-2.5 py-1 rounded-full font-semibold text-[11px] ${
-                      item.status === 'Compliant'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : item.status === 'Moderate Risk'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {item.status}
+                    <span className={`px-2.5 py-1 rounded-full font-semibold text-[11px] ${getBenchmarkStatusBadgeClass(item.status)}`}>
+                      {getBenchmarkStatusDisplay(item.status)}
                     </span>
                   </td>
                 </tr>

@@ -3,15 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
-  installedCapacityData, 
-  summaryMetrics, 
-  comparativeChartData, 
-  historicalTrajectory, 
-  regionalRenewables,
-  gapInsights,
-  FuelCapacity 
-} from '@/data/energy';
-import { 
   PieChart, 
   Pie, 
   Cell, 
@@ -46,13 +37,86 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+export interface FuelCapacity {
+  id: string;
+  name: string;
+  capacityGW: number;
+  capacitySharePercent: number;
+  generationSharePercent: number;
+  cufPercent: number;
+  color: string;
+  category: 'fossil' | 'renewable' | 'clean' | string;
+  description: string;
+}
+
+export interface MetricSummary {
+  label: string;
+  value: string;
+  subtext: string;
+  change?: string | null;
+  isPositive?: boolean;
+  highlight?: boolean;
+}
+
+export interface HistoricalDataPoint {
+  year: string;
+  coalCapacity: number;
+  renewableCapacity: number;
+  coalGeneration: number;
+  renewableGeneration: number;
+}
+
+export interface RegionalRenewable {
+  region: string;
+  states: string;
+  solarGW: number;
+  windGW: number;
+  hydroGW: number;
+  totalCleanGW: number;
+  shareOfNationalRE: number;
+}
+
+export interface GapInsight {
+  title: string;
+  description: string;
+  badge: string;
+}
+
 export default function EnergyMixDashboard() {
   const [mounted, setMounted] = useState(false);
-  const [selectedFuel, setSelectedFuel] = useState<FuelCapacity>(installedCapacityData[1]); // Solar by default
+  const [loading, setLoading] = useState(true);
+
+  const [installedCapacityData, setInstalledCapacityData] = useState<FuelCapacity[]>([]);
+  const [summaryMetrics, setSummaryMetrics] = useState<MetricSummary[]>([]);
+  const [historicalTrajectory, setHistoricalTrajectory] = useState<HistoricalDataPoint[]>([]);
+  const [regionalRenewables, setRegionalRenewables] = useState<RegionalRenewable[]>([]);
+  const [gapInsights, setGapInsights] = useState<GapInsight[]>([]);
+
+  const [selectedFuel, setSelectedFuel] = useState<FuelCapacity | null>(null);
   const [activeTab, setActiveTab] = useState<'comparison' | 'trajectory' | 'regional'>('comparison');
 
   useEffect(() => {
     setMounted(true);
+    async function fetchEnergyData() {
+      try {
+        const res = await fetch('/api/energy');
+        const json = await res.json();
+        if (json.data) {
+          setInstalledCapacityData(json.data.fuelCapacity || []);
+          setSummaryMetrics(json.data.metricSummary || []);
+          setHistoricalTrajectory(json.data.historical || []);
+          setRegionalRenewables(json.data.regional || []);
+          setGapInsights(json.data.gapInsights || []);
+          const defaultFuel = (json.data.fuelCapacity || []).find((f: FuelCapacity) => f.id === 'solar') || json.data.fuelCapacity?.[0] || null;
+          setSelectedFuel(defaultFuel);
+        }
+      } catch (err) {
+        console.error('Failed to load energy data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchEnergyData();
   }, []);
 
   // Icon selector based on fuel
@@ -67,7 +131,21 @@ export default function EnergyMixDashboard() {
     }
   };
 
-  const pieColors = installedCapacityData.map(d => d.color);
+  const comparativeChartData = installedCapacityData.map((f) => ({
+    fuel: f.name,
+    capacityShare: f.capacitySharePercent,
+    generationShare: f.generationSharePercent,
+    capacityGW: f.capacityGW,
+    cuf: `${Math.round(f.cufPercent)}%`,
+  }));
+
+  if (loading || !selectedFuel) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 flex items-center justify-center">
+        <div className="text-slate-500 font-medium">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
@@ -275,9 +353,9 @@ export default function EnergyMixDashboard() {
                     nameKey="name"
                     onClick={(entry) => setSelectedFuel(entry)}
                   >
-                    {installedCapacityData.map((entry, index) => (
+                    {installedCapacityData.map((entry) => (
                       <Cell 
-                        key={`cell-${index}`} 
+                        key={`cell-${entry.id}`} 
                         fill={entry.color} 
                         stroke={selectedFuel.id === entry.id ? '#0f172a' : '#ffffff'}
                         strokeWidth={selectedFuel.id === entry.id ? 3 : 1}
@@ -327,7 +405,7 @@ export default function EnergyMixDashboard() {
                 <span>{selectedFuel.name}</span>
               </div>
               <span className={`px-2 py-0.5 rounded-md font-medium text-[11px] uppercase ${
-                selectedFuel.category === 'fossil' 
+                selectedFuel.category.toLowerCase() === 'fossil' 
                   ? 'bg-rose-100 text-rose-800' 
                   : 'bg-emerald-100 text-emerald-800'
               }`}>

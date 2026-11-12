@@ -2,15 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  indianStatesSolarData, 
-  calculateCentralSubsidy, 
-  BENCHMARK_COST_PER_KW, 
-  SQFT_PER_KW, 
-  CO2_KG_PER_KWH, 
-  CO2_KG_PER_TREE_YEAR,
-  StateSolarData 
-} from '@/data/solar';
-import { 
   AreaChart, 
   Area, 
   XAxis, 
@@ -30,15 +21,35 @@ import {
   Leaf, 
   ShieldCheck, 
   CheckCircle2, 
-  ArrowRight, 
   Clock, 
-  FileCheck,
-  Zap,
-  HelpCircle
+  Zap
 } from 'lucide-react';
+
+interface StateSolarData {
+  id?: string;
+  state: string;
+  avgSunHoursPerDay: number;
+  avgTariffPerKWh: number;
+  discomName: string;
+  stateAdditionalSubsidyPerKW: number;
+}
+
+const BENCHMARK_COST_PER_KW = 58000;
+const SQFT_PER_KW = 100;
+const CO2_KG_PER_KWH = 0.82;
+const CO2_KG_PER_TREE_YEAR = 20;
+
+function calculateCentralSubsidy(systemCapacityKW: number): number {
+  if (systemCapacityKW <= 0) return 0;
+  if (systemCapacityKW <= 1) return 30000;
+  if (systemCapacityKW <= 2) return 60000;
+  return 78000;
+}
 
 export default function SolarCalculatorPage() {
   const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [statesData, setStatesData] = useState<StateSolarData[]>([]);
   
   // User Inputs
   const [monthlyBill, setMonthlyBill] = useState<number>(3500); // INR
@@ -48,10 +59,28 @@ export default function SolarCalculatorPage() {
 
   useEffect(() => {
     setMounted(true);
+    fetch('/api/solar/states')
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.data?.states && Array.isArray(json.data.states)) {
+          setStatesData(json.data.states);
+        }
+      })
+      .catch((err) => console.error('Error fetching solar states:', err))
+      .finally(() => setLoading(false));
   }, []);
 
+  if (loading || statesData.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mb-4"></div>
+        <p className="text-slate-600 text-sm font-medium">Loading solar calculator...</p>
+      </div>
+    );
+  }
+
   // Find selected state data
-  const stateData: StateSolarData = indianStatesSolarData.find(s => s.state === selectedStateName) || indianStatesSolarData[0];
+  const stateData: StateSolarData = statesData.find(s => s.state === selectedStateName) || statesData[0];
 
   // Calculations:
   // 1. Monthly energy consumption (units / kWh) = monthlyBill / avgTariffPerKWh
@@ -264,7 +293,7 @@ export default function SolarCalculatorPage() {
               onChange={(e) => setSelectedStateName(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-semibold text-slate-800 bg-white"
             >
-              {indianStatesSolarData.map((s) => (
+              {statesData.map((s) => (
                 <option key={s.state} value={s.state}>
                   {s.state} — (Tariff: ₹{s.avgTariffPerKWh}/unit, {s.avgSunHoursPerDay} Sun Hrs)
                 </option>

@@ -1,11 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { 
-  greenJobsData, 
-  jobSectors, 
-  GreenJob 
-} from '@/data/jobs';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   MapPin, 
@@ -15,16 +10,75 @@ import {
   Filter, 
   Sparkles, 
   CheckCircle2, 
-  ExternalLink, 
   X, 
   Users, 
-  Clock, 
   Send,
   Zap,
   ArrowRight
 } from 'lucide-react';
 
+interface GreenJob {
+  id: string;
+  title: string;
+  company: string;
+  sector: 'Solar PV' | 'Wind Energy' | 'BESS & Storage' | 'Green Hydrogen' | 'Grid & EV' | 'ESG & Carbon';
+  location: string;
+  workMode: 'On-site' | 'Hybrid' | 'Remote';
+  experience: 'Entry (0-2 yrs)' | 'Mid (3-5 yrs)' | 'Senior (6+ yrs)';
+  salaryRange: string;
+  postedDate: string;
+  featured?: boolean;
+  skills: string[];
+  description: string;
+  openings: number;
+}
+
+const jobSectors = [
+  'All',
+  'Solar PV',
+  'Wind Energy',
+  'BESS & Storage',
+  'Green Hydrogen',
+  'Grid & EV',
+  'ESG & Carbon'
+];
+
+const SECTOR_MAP: Record<string, GreenJob['sector']> = {
+  SOLAR_PV: 'Solar PV',
+  WIND_ENERGY: 'Wind Energy',
+  BESS_STORAGE: 'BESS & Storage',
+  GREEN_HYDROGEN: 'Green Hydrogen',
+  GRID_EV: 'Grid & EV',
+  ESG_CARBON: 'ESG & Carbon',
+  'Solar PV': 'Solar PV',
+  'Wind Energy': 'Wind Energy',
+  'BESS & Storage': 'BESS & Storage',
+  'Green Hydrogen': 'Green Hydrogen',
+  'Grid & EV': 'Grid & EV',
+  'ESG & Carbon': 'ESG & Carbon',
+};
+
+const EXPERIENCE_MAP: Record<string, GreenJob['experience']> = {
+  ENTRY: 'Entry (0-2 yrs)',
+  MID: 'Mid (3-5 yrs)',
+  SENIOR: 'Senior (6+ yrs)',
+  'Entry (0-2 yrs)': 'Entry (0-2 yrs)',
+  'Mid (3-5 yrs)': 'Mid (3-5 yrs)',
+  'Senior (6+ yrs)': 'Senior (6+ yrs)',
+};
+
+const WORKMODE_MAP: Record<string, GreenJob['workMode']> = {
+  ONSITE: 'On-site',
+  HYBRID: 'Hybrid',
+  REMOTE: 'Remote',
+  'On-site': 'On-site',
+  'Hybrid': 'Hybrid',
+  'Remote': 'Remote',
+};
+
 export default function GreenJobsPage() {
+  const [jobs, setJobs] = useState<GreenJob[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSector, setSelectedSector] = useState<string>('All');
   const [selectedExperience, setSelectedExperience] = useState<string>('All');
@@ -35,10 +89,39 @@ export default function GreenJobsPage() {
   const [applicantEmail, setApplicantEmail] = useState('');
   const [applicantPhone, setApplicantPhone] = useState('');
   const [appliedSuccess, setAppliedSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/jobs')
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.data && Array.isArray(json.data)) {
+          const mappedJobs: GreenJob[] = json.data.map((raw: any) => ({
+            id: raw.id,
+            title: raw.title,
+            company: raw.company,
+            sector: SECTOR_MAP[raw.sector] || raw.sector,
+            location: raw.location,
+            workMode: WORKMODE_MAP[raw.workMode] || raw.workMode,
+            experience: EXPERIENCE_MAP[raw.experience] || raw.experience,
+            salaryRange: raw.salaryRange,
+            postedDate: raw.postedDate,
+            featured: Boolean(raw.featured),
+            skills: Array.isArray(raw.skills) ? raw.skills : [],
+            description: raw.description,
+            openings: raw.openings || 1,
+          }));
+          setJobs(mappedJobs);
+        }
+      })
+      .catch((err) => console.error('Error fetching jobs:', err))
+      .finally(() => setLoading(false));
+  }, []);
 
   // Filtered jobs
   const filteredJobs = useMemo(() => {
-    return greenJobsData.filter((job) => {
+    return jobs.filter((job) => {
       // Sector filter
       if (selectedSector !== 'All' && job.sector !== selectedSector) {
         return false;
@@ -61,21 +144,56 @@ export default function GreenJobsPage() {
 
       return true;
     });
-  }, [searchQuery, selectedSector, selectedExperience]);
+  }, [jobs, searchQuery, selectedSector, selectedExperience]);
 
-  const handleApplySubmit = (e: React.FormEvent) => {
+  const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!applicantName || !applicantEmail) return;
-    setAppliedSuccess(true);
-    setTimeout(() => {
-      // Reset after a delay
-      setAppliedSuccess(false);
-      setSelectedJobForModal(null);
-      setApplicantName('');
-      setApplicantEmail('');
-      setApplicantPhone('');
-    }, 2500);
+    if (!applicantName || !applicantEmail || !selectedJobForModal) return;
+    setSubmitting(true);
+    setApplyError(null);
+
+    try {
+      const cleanPhone = applicantPhone.trim() ? applicantPhone.replace(/\D/g, '').slice(-10) : undefined;
+      const res = await fetch('/api/jobs/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: applicantName.trim(),
+          email: applicantEmail.trim(),
+          phone: cleanPhone || undefined,
+          jobId: selectedJobForModal.id,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorJson = await res.json().catch(() => null);
+        throw new Error(errorJson?.error?.message || 'Failed to submit application');
+      }
+
+      setAppliedSuccess(true);
+      setTimeout(() => {
+        // Reset after a delay
+        setAppliedSuccess(false);
+        setSelectedJobForModal(null);
+        setApplicantName('');
+        setApplicantEmail('');
+        setApplicantPhone('');
+      }, 2500);
+    } catch (err: any) {
+      setApplyError(err.message || 'Submission error');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mb-4"></div>
+        <p className="text-slate-600 text-sm font-medium">Loading green jobs...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
@@ -102,7 +220,7 @@ export default function GreenJobsPage() {
           <div className="pt-2 flex flex-wrap gap-4 text-xs text-emerald-300">
             <span className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full border border-white/10">
               <Users className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{greenJobsData.length} Active Positions Verified</span>
+              <span>{jobs.length} Active Positions Verified</span>
             </span>
             <span className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full border border-white/10">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
@@ -277,7 +395,10 @@ export default function GreenJobsPage() {
                   </span>
 
                   <button
-                    onClick={() => setSelectedJobForModal(job)}
+                    onClick={() => {
+                      setSelectedJobForModal(job);
+                      setApplyError(null);
+                    }}
                     className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-4 py-2 rounded-xl shadow-sm transition-all hover:translate-y-[-1px]"
                   >
                     <span>Apply Now</span>
@@ -332,6 +453,12 @@ export default function GreenJobsPage() {
                   </div>
                 </div>
 
+                {applyError && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
+                    {applyError}
+                  </div>
+                )}
+
                 <div className="space-y-3 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -367,7 +494,7 @@ export default function GreenJobsPage() {
                     </label>
                     <input
                       type="tel"
-                      placeholder="+91 98765 43210"
+                      placeholder="10-digit mobile number"
                       value={applicantPhone}
                       onChange={(e) => setApplicantPhone(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs text-slate-800"
@@ -394,10 +521,11 @@ export default function GreenJobsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-md shadow-emerald-600/30 transition-all"
+                    disabled={submitting}
+                    className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-md shadow-emerald-600/30 transition-all"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Submit Application</span>
+                    <span>{submitting ? 'Submitting...' : 'Submit Application'}</span>
                   </button>
                 </div>
               </form>
