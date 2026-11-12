@@ -1,0 +1,216 @@
+// ============================================================================
+// India Green Grid — Prisma Schema
+// PostgreSQL (Neon) — pooled URL for runtime, unpooled for migrations
+// ============================================================================
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum FuelCategory {
+  FOSSIL
+  RENEWABLE
+  CLEAN
+}
+
+enum ComplianceStatus {
+  COMPLIANT
+  MODERATE_RISK
+  CRITICAL_SHORTFALL
+}
+
+enum JobSector {
+  SOLAR_PV
+  WIND_ENERGY
+  BESS_STORAGE
+  GREEN_HYDROGEN
+  GRID_EV
+  ESG_CARBON
+}
+
+enum WorkMode {
+  ONSITE
+  HYBRID
+  REMOTE
+}
+
+enum ExperienceLevel {
+  ENTRY
+  MID
+  SENIOR
+}
+
+// ============================================================================
+// ENERGY MIX DATA
+// ============================================================================
+
+model FuelCapacity {
+  id                     String       @id
+  name                   String
+  capacityGW             Float
+  capacitySharePercent   Float
+  generationSharePercent Float
+  cufPercent             Float
+  color                  String
+  category               FuelCategory
+  description            String
+  sortOrder              Int          @default(0)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  @@map("fuel_capacity")
+}
+
+model MetricSummary {
+  id         String   @id @default(cuid())
+  label      String
+  value      String
+  subtext    String
+  change     String?
+  isPositive Boolean  @default(true)
+  highlight  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("metric_summary")
+}
+
+model HistoricalDataPoint {
+  id                  String   @id @default(cuid())
+  year                String   @unique
+  coalCapacity        Float
+  renewableCapacity   Float
+  coalGeneration      Float
+  renewableGeneration Float
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("historical_data_point")
+}
+
+model RegionalRenewable {
+  id                String   @id @default(cuid())
+  region            String   @unique
+  states            String
+  solarGW           Float
+  windGW            Float
+  hydroGW           Float
+  totalCleanGW      Float
+  shareOfNationalRE Float
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("regional_renewable")
+}
+
+model GapInsight {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  badge       String
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("gap_insight")
+}
+
+// ============================================================================
+// RPO COMPLIANCE DATA
+// ============================================================================
+
+model RPOTrajectoryYear {
+  id                   String   @id @default(cuid())
+  year                 String   @unique
+  financialYear        String
+  totalRPOTarget       Float
+  windRPO              Float
+  hydroRPO             Float
+  otherRPO             Float
+  storageObligationMWh Float?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("rpo_trajectory_year")
+}
+
+model DiscomBenchmark {
+  id              String           @id @default(cuid())
+  discom          String           @unique
+  state           String
+  achievedPercent Float
+  target2025      Float
+  shortfall       Float
+  status          ComplianceStatus
+  annualDemandMU  Float
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@map("discom_benchmark")
+}
+
+// ============================================================================
+// ROOFTOP SOLAR (PM SURYA GHAR)
+// ============================================================================
+
+model StateSolarData {
+  id                          String   @id @default(cuid())
+  state                       String   @unique
+  avgSunHoursPerDay           Float
+  avgTariffPerKWh             Float
+  stateAdditionalSubsidyPerKW Float    @default(0)
+  discomName                  String
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@map("state_solar_data")
+}
+
+// ============================================================================
+// GREEN JOBS BOARD
+// ============================================================================
+
+model GreenJob {
+  id           String          @id
+  title        String
+  company      String
+  sector       JobSector
+  location     String
+  workMode     WorkMode
+  experience   ExperienceLevel
+  salaryRange  String
+  postedDate   String
+  featured     Boolean         @default(false)
+  skills       String[]
+  description  String
+  openings     Int             @default(1)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  applications JobApplication[]
+
+  @@map("green_job")
+}
+
+model JobApplication {
+  id             String   @id @default(cuid())
+  jobId          String
+  job            GreenJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  applicantName  String
+  applicantEmail String
+  applicantPhone String?
+  appliedAt      DateTime @default(now())
+
+  @@map("job_application")
+}
